@@ -1,0 +1,226 @@
+---
+title: "Exercise 7C. Bleeding Time"
+author: "Espinosa & Madrid"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+```{r}
+
+library(tidyverse)
+library(car)
+
+```
+
+
+# 1. DATA
+```{r}
+
+#  imports data into R
+blood <- read.csv("C:/Users/Xyrine/Documents/School Stuff/BS BIO 4th Year/1st Semester/BIO 118/Module 1/Module 1 - Laboratory Exercise/bio118-class/exercises/bio122_ex07/data/blood.csv")
+head(blood, n = 4)
+
+```
+
+
+## 1a. Exploring Data
+```{r}
+
+#  reorganizes data for pressure vs no pressure 
+pres <- blood %>%
+  select(Bleed.NoPress, Bleed.Press) %>%
+  gather(Pressure, Bleed.Time, Bleed.NoPress, Bleed.Press) %>%
+  mutate(Pressure = gsub("Bleed.NoPress", "Not Cuffed", Pressure),
+         Pressure = gsub("Bleed.Press", "Cuffed", Pressure)) %>%
+  mutate_all(~replace(., . == "", NA)) %>%
+  drop_na()
+
+pres$Bleed.Time <- as.numeric(pres$Bleed.Time)
+
+head(pres, n = 4)
+
+## plot
+ggplot(pres, aes(Pressure, Bleed.Time)) + geom_boxplot()
+
+
+
+#  reorganizes data for ABO bleed time
+abo <- blood %>%
+  select(ABO, Bleed.NoPress, Bleed.Press) %>%
+  mutate_all(~replace(., . == "", NA)) %>%
+  mutate(ABO = gsub("\\ ", "", ABO),
+         Bleed.NoPress = gsub("<30", "29", Bleed.NoPress)) %>%
+  drop_na()
+
+abo$Bleed.NoPress <- as.numeric(abo$Bleed.NoPress) 
+
+head(abo, n = 4)
+
+#  abo but removes group with one observation (B-)
+abo.b <- subset(abo, ABO!="B-")
+
+
+
+oba <- abo %>%
+  gather(Pressure, Bleed.Time, Bleed.NoPress, Bleed.Press) %>%
+  mutate(Pressure = gsub("Bleed.NoPress", "Not Cuffed", Pressure),
+         Pressure = gsub("Bleed.Press", "Cuffed", Pressure))
+
+head(oba, n = 4)
+
+
+
+## plot 
+abo.plot <- ggplot(abo, aes(ABO, Bleed.NoPress)) + geom_boxplot() + 
+  xlab("Blood Type") + ylab("Bleeding Time (sec)")
+
+ggsave("C:/Users/Xyrine/Documents/School Stuff/BS BIO 4th Year/1st Semester/BIO 118/Module 1/Module 1 - Laboratory Exercise/bio118-class/exercises/bio122_ex07/figures/abo.png", 
+       width = 8, height = 6)
+
+abo.plot
+
+## no B-
+abob.plot <- ggplot(abo.b, aes(ABO, Bleed.NoPress)) + geom_boxplot() + 
+  xlab("Blood Type") + ylab("Bleeding Time (sec)")
+
+
+ggplot(oba, aes(ABO, Bleed.Time, col = Pressure)) + geom_boxplot()
+
+
+```
+
+
+# 2. PRESSURE VS. NO PRESSURE
+
+## 2a. Test for normality of distribution
+```{r}
+
+## Shapiro-Wilk normality Test
+shapiro.test(pres$Bleed.Time[pres$Pressure == "Not Cuffed"]) # p = 0.01; not normal 
+shapiro.test(pres$Bleed.Time[pres$Pressure == "Cuffed"]) # p = 0.002; not normal 
+
+
+```
+
+
+## 2b. Test for homogeneity in variances
+```{r}
+
+## homoscedasticity
+leveneTest(Bleed.Time ~ Pressure, pres) # p > 0.05; assume equality of variance
+
+```
+
+
+## 2c. Non-parametric and parametric T-test
+```{r}
+## Unpaired Two-samples Wilcoxon Test
+t.test(Bleed.Time ~ Pressure, data = pres, 
+                   alternative = "two.sided", paired = FALSE, var.equal = TRUE)$p.value
+#  p > 0.05; reject Ho
+
+wilcox.test(Bleed.Time ~ Pressure, data = pres, 
+                     exact = FALSE)$p.value
+#  p > 0.05; reject Ho
+
+```
+
+
+
+
+
+# 3. PLATELET KINETICS BETWEEN BLOOD TYPES
+
+```{r}
+
+#  bleeding time summary
+abo %>%
+  group_by(ABO) %>%
+  summarise(
+    "Count" = n(),
+    "Mean" = mean(Bleed.NoPress),
+    "Minimum" = min(Bleed.NoPress),
+    "Maximum" = max(Bleed.NoPress),
+    "SD" = sd(Bleed.NoPress),
+    "IQR" = IQR(Bleed.NoPress),
+    "Sample Variance" = var(Bleed.NoPress),
+    "Q1" = quantile(Bleed.NoPress, probs = c(.25)),
+    "Q3" = quantile(Bleed.NoPress, probs = c(.75))
+  )
+
+summary(abo)
+
+
+```
+
+
+## 3a. Test for normality of distribution
+```{r}
+
+## Shapiro-Wilk normality Test
+shapiro.test(abo$Bleed.NoPress[abo$ABO == "A+"])$p.value # p = 0.08; normal 
+shapiro.test(abo$Bleed.NoPress[abo$ABO == "B+"])$p.value # p = 0.32; normal
+shapiro.test(abo$Bleed.NoPress[abo$ABO == "AB+"]) # p = 0.002; not normal
+shapiro.test(abo$Bleed.NoPress[abo$ABO == "O+"]) # p = 0.27; normal
+
+## Shapiro-Wilk normality Test (no B-)
+shapiro.test(abo.b$Bleed.NoPress[abo.b$ABO == "A+"])$p.value # p = 0.08; normal 
+shapiro.test(abo.b$Bleed.NoPress[abo.b$ABO == "B+"])$p.value # p = 0.32; normal
+shapiro.test(abo.b$Bleed.NoPress[abo.b$ABO == "AB+"]) # p < 0.002; not normal
+shapiro.test(abo.b$Bleed.NoPress[abo.b$ABO == "O+"]) # p = 0.27; normal
+
+
+```
+
+
+## 3b. Test for homogeneity in variances
+```{r}
+
+## homoscedasticity
+leveneTest(Bleed.NoPress ~ ABO, abo) # p > 0.05; assume equality of variance 
+
+## homoscedasticity (no B-)
+leveneTest(Bleed.NoPress ~ ABO, abo.b) # p > 0.05; assume equality of variance
+
+```
+
+
+## 3c. ANOVA
+```{r}
+
+## With B-
+
+#  ANOVA
+anov <- aov(Bleed.NoPress ~ ABO, abo)   ## p = 0.92
+summary(anov) # p > 0.05; accept Ho
+
+#  Kruskal-Wallis test
+kw <- kruskal.test(Bleed.NoPress ~ ABO, abo)  ## p = 0.72
+kw #  p > 0.05; accept Ho
+
+
+#  multiple pairwise-comparison between groups
+wx <- pairwise.wilcox.test(abo$Bleed.NoPress, abo$ABO, p.adjust.method = "BH")
+wx #  no sig. diff. in any group
+
+
+## Without B-
+
+#  ANOVA
+anov.b <- aov(Bleed.NoPress ~ ABO, abo.b)  ## p = 0.991
+summary(anov.b) #  p > 0.05; accept Ho
+
+#  Kruskal-Wallis test
+kw.b <- kruskal.test(Bleed.NoPress ~ ABO, abo.b)  ## p = 0.80
+kw.b #  p > 0.05; accept Ho
+
+
+#  multiple pairwise-comparison between groups
+wx.b <- pairwise.wilcox.test(abo.b$Bleed.NoPress, abo.b$ABO, p.adjust.method = "BH")
+wx.b #  no sig. diff. in any group
+
+```
